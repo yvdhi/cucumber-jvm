@@ -40,18 +40,6 @@ public class UrlOutputStreamTest {
         socket.close();
     }
 
-//    @Test
-//    void sends_10Mb_body_to_s3(Vertx vertx, VertxTestContext testContext) throws IOException {
-//        String requestBody = makeStringWithEmoji(10 * 1024 * 1024);
-//        CurlOption url = CurlOption.parse("https://messages.cucumber.io/api/reports");
-//
-//        OutputStream out = new UrlOutputStream(url, new UrlReporter(System.out));
-//        Writer w = new UTF8OutputStreamWriter(out);
-//        w.write(requestBody);
-//        w.flush();
-//        w.close();
-//    }
-
     @Test
     void throws_exception_for_500_status(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
         String requestBody = "";
@@ -96,13 +84,6 @@ public class UrlOutputStreamTest {
         verifyRequest(url, testServer, vertx, testContext, requestBody);
     }
 
-    private String makeStringWithEmoji(int size) {
-        String base = "abcå\uD83D\uDE02";
-        int baseLength = base.length();
-        return IntStream.range(0, size).mapToObj(i -> base.substring(i % baseLength, i % baseLength + 1))
-                .collect(Collectors.joining());
-    }
-
     @Test
     void overrides_request_method(Vertx vertx, VertxTestContext testContext) {
         String requestBody = "";
@@ -138,6 +119,14 @@ public class UrlOutputStreamTest {
                 testContext.completeNow();
             }
         }));
+    }
+
+    static String makeStringWithEmoji(int size) {
+        String base = "abcå\uD83D\uDE02";
+        int baseLength = base.length();
+        String string = IntStream.range(0, size).mapToObj(i -> base.substring(i % baseLength, i % baseLength + 1))
+                .collect(Collectors.joining());
+        return string;
     }
 
     public static class TestServer extends AbstractVerticle {

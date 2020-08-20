@@ -70,7 +70,7 @@ class UrlOutputStream extends OutputStream {
 
         handleResponse(urlConnectionOne, urlConnectionOne.getRequestProperties());
 
-        if (isRedirect(urlConnectionOne.getResponseCode())) {
+        if (!isRedirect(urlConnectionOne.getResponseCode())) {
             if (urlReporter != null) {
                 urlReporter.report(urlConnectionOne.getURL());
             }
@@ -80,9 +80,9 @@ class UrlOutputStream extends OutputStream {
             for (Entry<String, String> header : option.getHeaders()) {
                 urlConnectionTwo.setRequestProperty(header.getKey(), header.getValue());
             }
-            urlConnectionOne.setInstanceFollowRedirects(true);
-            urlConnectionOne.setRequestMethod(option.getMethod().name());
-            urlConnectionOne.setDoOutput(true);
+            urlConnectionTwo.setInstanceFollowRedirects(true);
+            urlConnectionTwo.setRequestMethod(option.getMethod().name());
+            urlConnectionTwo.setDoOutput(true);
 
             try (OutputStream outputStream = urlConnectionTwo.getOutputStream()) {
                 Files.copy(temp, outputStream);
@@ -106,7 +106,8 @@ class UrlOutputStream extends OutputStream {
             throws IOException {
         Map<String, List<String>> responseHeaders = urlConnection.getHeaderFields();
         int responseCode = urlConnection.getResponseCode();
-        boolean success = 200 <= responseCode && responseCode < 300;
+//        boolean success = 200 <= responseCode && responseCode < 300;
+        boolean success = responseCode < 400;
 
         InputStream inputStream = urlConnection.getErrorStream() != null ? urlConnection.getErrorStream()
                 : urlConnection.getInputStream();
