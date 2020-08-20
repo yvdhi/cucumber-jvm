@@ -59,22 +59,47 @@ class UrlOutputStream extends OutputStream {
     public void close() throws IOException {
         tempOutputStream.close();
 
-        URL url = option.getUri().toURL();
-        HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+        URL urlOne = option.getUri().toURL();
+        HttpURLConnection urlConnectionOne = (HttpURLConnection) urlOne.openConnection();
         for (Entry<String, String> header : option.getHeaders()) {
-            urlConnection.setRequestProperty(header.getKey(), header.getValue());
+            urlConnectionOne.setRequestProperty(header.getKey(), header.getValue());
         }
-        urlConnection.setInstanceFollowRedirects(true);
-        urlConnection.setRequestMethod(option.getMethod().name());
-        urlConnection.setDoOutput(true);
-        Map<String, List<String>> requestHeaders = urlConnection.getRequestProperties();
-        try (OutputStream outputStream = urlConnection.getOutputStream()) {
-            Files.copy(temp, outputStream);
-            handleResponse(urlConnection, requestHeaders);
+        urlConnectionOne.setInstanceFollowRedirects(false);
+        urlConnectionOne.setRequestMethod(option.getMethod().name());
+        urlConnectionOne.setDoOutput(false);
+
+        handleResponse(urlConnectionOne, urlConnectionOne.getRequestProperties());
+
+        if (isRedirect(urlConnectionOne.getResponseCode())) {
+            if (urlReporter != null) {
+                urlReporter.report(urlConnectionOne.getURL());
+            }
+        } else {
+            URL urlTwo = new URL(urlConnectionOne.getHeaderField("Location"));
+            HttpURLConnection urlConnectionTwo = (HttpURLConnection) urlTwo.openConnection();
+            for (Entry<String, String> header : option.getHeaders()) {
+                urlConnectionTwo.setRequestProperty(header.getKey(), header.getValue());
+            }
+            urlConnectionOne.setInstanceFollowRedirects(true);
+            urlConnectionOne.setRequestMethod(option.getMethod().name());
+            urlConnectionOne.setDoOutput(true);
+
+            try (OutputStream outputStream = urlConnectionTwo.getOutputStream()) {
+                Files.copy(temp, outputStream);
+                handleResponse(urlConnectionTwo, urlConnectionOne.getRequestProperties());
+            }
+            if (urlReporter != null) {
+                urlReporter.report(urlConnectionTwo.getURL());
+            }
         }
-        if (urlReporter != null) {
-            urlReporter.report(urlConnection.getURL());
-        }
+    }
+
+    private boolean isRedirect(int responseCode) {
+        return responseCode == 301 ||
+                responseCode == 302 ||
+                responseCode == 303 ||
+                responseCode == 307 ||
+                responseCode == 308;
     }
 
     private static void handleResponse(HttpURLConnection urlConnection, Map<String, List<String>> requestHeaders)
@@ -103,13 +128,13 @@ class UrlOutputStream extends OutputStream {
             String responseBody
     ) {
         return new IOException(String.format(
-            "%s:\n> %s %s%s%s%s",
-            "HTTP request failed",
-            method,
-            url,
-            headersToString("> ", requestHeaders),
-            headersToString("< ", responseHeaders),
-            responseBody));
+                "%s:\n> %s %s%s%s%s",
+                "HTTP request failed",
+                method,
+                url,
+                headersToString("> ", requestHeaders),
+                headersToString("< ", responseHeaders),
+                responseBody));
     }
 
     private static String headersToString(String prefix, Map<String, List<String>> headers) {
