@@ -13,12 +13,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.Writer;
 import java.net.ServerSocket;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static java.lang.String.format;
@@ -33,6 +32,12 @@ public class UrlOutputStreamTest {
     private int port;
     private Exception exception;
 
+    static byte[] bytes(int size) {
+        return IntStream.range(0, size).collect(ByteArrayOutputStream::new, (baos, i) -> baos.write((byte) i),
+                (baos1, baos2) -> baos1.write(baos2.toByteArray(), 0, baos2.size()))
+                .toByteArray();
+    }
+
     @BeforeEach
     void randomPort() throws IOException {
         ServerSocket socket = new ServerSocket(0);
@@ -42,7 +47,7 @@ public class UrlOutputStreamTest {
 
     @Test
     void throws_exception_for_500_status(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
-        String requestBody = "";
+        byte[] requestBody = new byte[0];
         TestServer testServer = new TestServer(port, testContext, requestBody, HttpMethod.PUT, null, 500,
                 "Oh noes");
         CurlOption option = CurlOption.parse(format("http://localhost:%d/storage", port));
@@ -58,9 +63,11 @@ public class UrlOutputStreamTest {
 
     @Test
     void sends_empty_body_on_initial_request(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
-        String requestBody = "hello";
-        TestServer testServer = new TestServer(port, testContext, "", HttpMethod.PUT, null, 200, "");
+        byte[] expectedRequestBody = new byte[0];
+        TestServer testServer = new TestServer(port, testContext, expectedRequestBody, HttpMethod.PUT, null, 200, "");
         CurlOption url = CurlOption.parse(format("http://localhost:%d/storage", port));
+
+        byte[] requestBody = bytes(10);
         verifyRequest(url, testServer, vertx, testContext, requestBody);
 
         assertThat(testContext.awaitCompletion(TIMEOUT_SECONDS, TimeUnit.SECONDS), is(true));
@@ -68,7 +75,7 @@ public class UrlOutputStreamTest {
 
     @Test
     void follows_307_temporary_redirects(Vertx vertx, VertxTestContext testContext) throws InterruptedException {
-        String requestBody = "hello";
+        byte[] requestBody = bytes(10);
         TestServer testServer = new TestServer(port, testContext, requestBody, HttpMethod.PUT, null, 200, "");
         CurlOption url = CurlOption.parse(format("http://localhost:%d/redirect", port));
         verifyRequest(url, testServer, vertx, testContext, requestBody);
@@ -78,7 +85,7 @@ public class UrlOutputStreamTest {
 
     @Test
     void streams_request_body_in_chunks(Vertx vertx, VertxTestContext testContext) {
-        String requestBody = makeStringWithEmoji(1024);
+        byte[] requestBody = bytes(1024);
         TestServer testServer = new TestServer(port, testContext, requestBody, HttpMethod.PUT, null, 200, "");
         CurlOption url = CurlOption.parse(format("http://localhost:%d/redirect", port));
         verifyRequest(url, testServer, vertx, testContext, requestBody);
@@ -86,7 +93,7 @@ public class UrlOutputStreamTest {
 
     @Test
     void overrides_request_method(Vertx vertx, VertxTestContext testContext) {
-        String requestBody = "";
+        byte[] requestBody = new byte[0];
         TestServer testServer = new TestServer(port, testContext, requestBody, HttpMethod.POST,
                 "application/x-www-form-urlencoded", 200, "");
         CurlOption url = CurlOption.parse(format("http://localhost:%d -X POST", port));
@@ -95,7 +102,7 @@ public class UrlOutputStreamTest {
 
     @Test
     void sets_request_headers(Vertx vertx, VertxTestContext testContext) {
-        String requestBody = "";
+        byte[] requestBody = new byte[0];
         TestServer testServer = new TestServer(port, testContext, requestBody, HttpMethod.PUT,
                 "application/x-ndjson", 200, "");
         CurlOption url = CurlOption
@@ -104,15 +111,18 @@ public class UrlOutputStreamTest {
     }
 
     private void verifyRequest(
-            CurlOption url, TestServer testServer, Vertx vertx, VertxTestContext testContext, String requestBody
+            CurlOption url, TestServer testServer, Vertx vertx, VertxTestContext testContext, byte[] requestBody
     ) {
         vertx.deployVerticle(testServer, testContext.succeeding(id -> {
             try {
                 OutputStream out = new UrlOutputStream(url, null);
-                Writer w = new UTF8OutputStreamWriter(out);
-                w.write(requestBody);
-                w.flush();
-                w.close();
+//                Writer w = new UTF8OutputStreamWriter(out);
+                for (byte b : requestBody) {
+                    System.out.println("b = " + b);
+                    out.write(b);
+                }
+                out.flush();
+                out.close();
                 testContext.completeNow();
             } catch (Exception e) {
                 exception = e;
@@ -121,19 +131,11 @@ public class UrlOutputStreamTest {
         }));
     }
 
-    static String makeStringWithEmoji(int size) {
-        String base = "abcå\uD83D\uDE02";
-        int baseLength = base.length();
-        String string = IntStream.range(0, size).mapToObj(i -> base.substring(i % baseLength, i % baseLength + 1))
-                .collect(Collectors.joining());
-        return string;
-    }
-
     public static class TestServer extends AbstractVerticle {
 
         private final int port;
         private final VertxTestContext testContext;
-        private final String expectedBody;
+        private final byte[] expectedRequestBody;
         private final HttpMethod expectedMethod;
         private final String expectedContentType;
         private final int statusCode;
@@ -142,7 +144,7 @@ public class UrlOutputStreamTest {
         public TestServer(
                 int port,
                 VertxTestContext testContext,
-                String expectedBody,
+                byte[] expectedRequestBody,
                 HttpMethod expectedMethod,
                 String expectedContentType,
                 int statusCode,
@@ -150,7 +152,7 @@ public class UrlOutputStreamTest {
         ) {
             this.port = port;
             this.testContext = testContext;
-            this.expectedBody = expectedBody;
+            this.expectedRequestBody = expectedRequestBody;
             this.expectedMethod = expectedMethod;
             this.expectedContentType = expectedContentType;
             this.statusCode = statusCode;
@@ -176,11 +178,12 @@ public class UrlOutputStreamTest {
                     Buffer body = Buffer.buffer(0);
                     ctx.request().handler(body::appendBuffer);
                     ctx.request().endHandler(e -> {
-                        String receivedBody = body.toString("utf-8");
+                        byte[] receivedBytes = body.getBytes();
+                        System.out.println("receivedBytes = " + receivedBytes.length);
                         ctx.response().setChunked(true);
                         ctx.response().write(responseBody);
                         ctx.response().end();
-                        testContext.verify(() -> assertThat(receivedBody, is(equalTo(expectedBody))));
+                        testContext.verify(() -> assertThat(receivedBytes, is(equalTo(expectedRequestBody))));
                     });
                 });
             });

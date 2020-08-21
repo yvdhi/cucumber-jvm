@@ -20,6 +20,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.nio.file.Files.newOutputStream;
 import static java.util.Objects.requireNonNull;
 
+// --format "anything:url"
 class UrlOutputStream extends OutputStream {
 
     private final UrlReporter urlReporter;
